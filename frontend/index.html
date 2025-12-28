@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Safe Choices - Prediction Market Simulation</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/date-fns/1.30.1/date_fns.min.js"></script>
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <header class="top-bar">
+        <div class="nav-container">
+            <div class="logo-section">
+                <img src="polymarket_logo.png" alt="Safe Choices" class="logo">
+                <h1 class="app-title">Safe Choices</h1>
+                <span class="subtitle">Prediction Market Simulation</span>
+            </div>
+            <div class="nav-info">
+                <span class="dataset-info">Dataset: Polymarket 2024-2025 Markets</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Simulation Controls -->
+        <section class="controls-section">
+            <div class="controls-header">
+                <h2>Simulation Configuration</h2>
+                <p>Configure your prediction market trading simulation parameters</p>
+            </div>
+
+            <div class="controls-grid">
+                <!-- Simulation Type Selection -->
+                <div class="control-group full-width">
+                    <label class="control-label">Simulation Type</label>
+                    <div class="simulation-tabs">
+                        <button class="sim-tab active" data-sim="single" onclick="selectSimulation('single')">
+                            <div class="tab-title">Single Fund</div>
+                            <div class="tab-subtitle">All capital in one fund</div>
+                        </button>
+                        <button class="sim-tab" data-sim="threshold" onclick="selectSimulation('threshold')">
+                            <div class="tab-title">Single Fund Threshold</div>
+                            <div class="tab-subtitle">Stop at target return</div>
+                        </button>
+                        <button class="sim-tab" data-sim="multi" onclick="selectSimulation('multi')">
+                            <div class="tab-title">Multi Fund</div>
+                            <div class="tab-subtitle">Diversified portfolio</div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Base Parameters -->
+                <div class="control-group">
+                    <label class="control-label">Starting Capital ($)</label>
+                    <input type="number" id="startingCapital" class="control-input" value="10000" min="1000" max="100000" step="1000">
+                    <div class="control-subtitle">Total initial investment amount</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Number of Simulations</label>
+                    <input type="number" id="numSimulations" class="control-input" value="100" min="10" max="100" step="10">
+                    <div class="control-subtitle">Monte Carlo simulation runs (max 100)</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Start Date</label>
+                    <input type="date" id="startDate" class="control-input" value="2025-01-01" min="2025-01-01">
+                    <div class="control-subtitle">Simulation start date (2025+ only)</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Max Duration (Days)</label>
+                    <input type="number" id="maxDuration" class="control-input" value="365" min="30" max="730" step="30">
+                    <div class="control-subtitle">Maximum simulation length</div>
+                </div>
+
+                <!-- Probability Thresholds -->
+                <div class="control-group">
+                    <label class="control-label">Min Probability 7d (%)</label>
+                    <input type="number" id="minProb7d" class="control-input" value="90" min="50" max="99" step="1">
+                    <div class="control-subtitle">Minimum market probability 7 days before</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Min Probability Current (%)</label>
+                    <input type="number" id="minProbCurrent" class="control-input" value="90" min="50" max="99" step="1">
+                    <div class="control-subtitle">Minimum probability at investment</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Days Before Resolution</label>
+                    <input type="number" id="daysBefore" class="control-input" value="1" min="1" max="7" step="1">
+                    <div class="control-subtitle">When to invest before market closes</div>
+                </div>
+
+                <div class="control-group">
+                    <label class="control-label">Market Selection Skew</label>
+                    <input type="number" id="skewFactor" class="control-input" value="0.1" min="0.01" max="1.0" step="0.01">
+                    <div class="control-subtitle">Higher values favor closer markets</div>
+                </div>
+
+                <!-- Threshold-specific controls -->
+                <div class="control-group threshold-only" style="display: none;">
+                    <label class="control-label">Target Return (%)</label>
+                    <select id="targetReturn" class="control-input">
+                        <option value="4.14">4.14% (Treasury Rate)</option>
+                        <option value="10.56">10.56% (NASDAQ Average)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <input type="number" id="customTarget" class="control-input" style="display: none; margin-top: 8px;" min="1" max="50" step="0.1">
+                    <div class="control-subtitle">Stop trading when target is reached</div>
+                </div>
+
+                <!-- Multi-fund specific controls -->
+                <div class="control-group multi-only" style="display: none;">
+                    <label class="control-label">Number of Funds</label>
+                    <input type="number" id="numFunds" class="control-input" value="5" min="2" max="10" step="1">
+                    <div class="control-subtitle">Split capital into N independent funds (max 10)</div>
+                </div>
+            </div>
+
+            <!-- Run Button -->
+            <div class="run-section">
+                <button class="run-button" onclick="runSimulation()" id="runBtn">
+                    <span class="run-text">Run Simulation</span>
+                    <div class="run-spinner" style="display: none;"></div>
+                </button>
+                <div class="run-info">
+                    <span id="estimatedTime">Estimated time: ~5-10 seconds</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Progress Bar -->
+        <section class="progress-section" style="display: none;">
+            <div class="progress-container">
+                <div class="progress-label">
+                    <span id="progressText">Running simulation...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section" id="resultsSection" style="display: none;">
+            <div class="results-header">
+                <h2>Simulation Results</h2>
+                <button class="export-button" onclick="exportResults()" id="exportBtn">Export Data</button>
+            </div>
+
+            <!-- Summary Statistics -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <h3>Performance</h3>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-item">
+                            <span class="stat-label">Average Return:</span>
+                            <span class="stat-value" id="avgReturn">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Median Return:</span>
+                            <span class="stat-value" id="medianReturn">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Success Rate:</span>
+                            <span class="stat-value" id="successRate">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <h3>Risk Metrics</h3>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-item">
+                            <span class="stat-label">Bust Rate:</span>
+                            <span class="stat-value" id="bustRate">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Volatility:</span>
+                            <span class="stat-value" id="volatility">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Max Drawdown:</span>
+                            <span class="stat-value" id="maxDrawdown">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card multi-stats" style="display: none;">
+                    <div class="stat-header">
+                        <h3>Portfolio Stats</h3>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-item">
+                            <span class="stat-label">Avg Surviving Funds:</span>
+                            <span class="stat-value" id="avgSurvivingFunds">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Survivorship Rate:</span>
+                            <span class="stat-value" id="survivorshipRate">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Diversification Benefit:</span>
+                            <span class="stat-value" id="diversificationBenefit">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card threshold-stats" style="display: none;">
+                    <div class="stat-header">
+                        <h3>Target Achievement</h3>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-item">
+                            <span class="stat-label">Target Reached:</span>
+                            <span class="stat-value" id="targetReached">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Avg Time to Target:</span>
+                            <span class="stat-value" id="avgTimeToTarget">--</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">vs Never Stop:</span>
+                            <span class="stat-value" id="vsNeverStop">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Return Distribution</h3>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="returnChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Capital Evolution</h3>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="capitalChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card multi-chart" style="display: none;">
+                    <div class="chart-header">
+                        <h3>Fund Survivorship</h3>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="survivorshipChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h3>Final Capital Distribution</h3>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="distributionChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

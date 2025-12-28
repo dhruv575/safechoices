@@ -34,10 +34,6 @@ These questioins drive us to our overarching hypothesis: inefficiencies in "safe
 
 ## Methodology
 
-2. Do some exploratory data analysis on the markets to answer questions such as what percent of 95% probability graphs resolve to the expected outcome; use some statsitics to come up with confidence ranges for these values
-3. Develop the simulations mentioned above. Create some cool graphs and stuff. Write about it
-4. Create a frontend interface where anyone can divide their starting capital into as many smaller funds as they like, have whatever target returns they'd like, and run however many simulations they'd like. 
-
 ### Dataset Collection
 
 We area able to collect the necessary infromation through a combination of usage of the Polymarket Gamma API, which allows us to filter markets by end date, and the CLOB API, which lets us fetch price history for a given market via its CLOB token id.
@@ -84,14 +80,14 @@ weather_keywords = ['temperature', 'degrees', 'rain', 'snow', 'weather', 'storm'
                     'precipitation', 'humidity', 'forecast', 'climate']
 ``` 
 
-For the remaining markets, we check their price history 48 hours before their end date and 7 days before their end date (for experiments hinged on time horizon). An example of the CLOB API request  is included here
+For the remaining markets, we log their price history every 24 hours from 7 days before their end date to 1 day before their end date (for experiments hinged on time horizon). An example of the CLOB API request is included here
 ```
 curl --request GET \
-  --url 'https://clob.polymarket.com/prices-history?market=41248677391516436501520443748383894699563681344034127905029783553952611928088&startTs=1735706728&endTs=1735706768'
+  --url 'https://clob.polymarket.com/prices-history?fidelity=1440&market=41248677391516436501520443748383894699563681344034127905029783553952611928088&startTs=1735130728&endTs=1735706728'
 ```
 The surviving markets are then committed to our dataset. This procedure is repeated for every day in the years of 2024 and 2025. 
 
-Our full data collection Python Notebook can be seen in the dataCollection folder of the Github for this project, along with examples of the responses from the API requests shown above. Our dataset has been opersourced and uploaded to Kaggle at ____________. 
+Our full data collection Python Notebook can be seen in the dataCollection folder of the Github for this project, along with examples of the responses from the API requests shown above. Our dataset has been opersourced and uploaded to Kaggle at [https://www.kaggle.com/datasets/dhruvgup/polymarket-closed-2025-markets-7-day-price-history/data](https://www.kaggle.com/datasets/dhruvgup/polymarket-closed-2025-markets-7-day-price-history/data). 
 
 ### Dataset Exploration
 
@@ -120,71 +116,85 @@ With the dataset in hand, we can try and address the questions mentioned earlier
 
 The analysis reveals whether markets are overconfident (actual win rate < expected), underconfident (actual win rate > expected), or well-calibrated.
 
-### Simulations - Single Fund, Multi Fund, Break point
+### Simulations - Single Fund, Single Fund Threshold, Multi Fund
 
-We implement three types of simulations to explore different trading strategies and risk management approaches:
+We implement three types of Monte Carlo simulations to explore different trading strategies and risk management approaches, starting from 2025-01-01:
 
 #### 1. Single Fund Simulation
 
 A single trader deploys all capital sequentially across safe markets, reinvesting all winnings. This represents the baseline "all-in" strategy.
 
 **Parameters:**
-- `starting_capital`: Initial investment (e.g., $10,000)
-- `years`: Number of years to simulate
-- `sims`: Number of simulation runs
-- Markets are selected randomly from the dataset, weighted by availability
+- `starting_capital`: Initial investment ($10,000)
+- `days_before`: Days before resolution to invest (1-7 days)
+- `min_prob_7d`: Minimum probability threshold at 7 days before resolution (e.g., 0.90)
+- `min_prob_current`: Minimum probability threshold at investment day (e.g., 0.90)
+- `skew_factor`: Controls left skew in market selection (higher = prefer closer markets)
+- `ending_factor`: Probability of ending simulation that increases daily (starts 5%, +0.1% per day)
+- `max_duration_days`: Maximum simulation duration (365 days)
+
+**Market Selection:**
+- Markets selected using exponential decay favoring closer resolution dates
+- Must meet probability thresholds at both 7 days and investment day
+- Uses actual historical market probabilities and outcomes
 
 **Key Metrics:**
-- Final capital distribution
-- Percentage of simulations that go bust (capital = 0)
-- Average, median, min, max final capital
+- Final capital distribution and bust rate
 - Return distribution and percentiles
+- Number of trades per simulation
+- Average time to completion
 
-#### 2. Multi-Fund Simulation
+#### 2. Single Fund Threshold Simulation
 
-Capital is divided into multiple independent funds, each operating as a separate single fund. This tests the diversification benefit of splitting capital.
+Identical to Single Fund but with target return thresholds - trading stops when target is reached.
 
-**Parameters:**
-- `starting_capital`: Total initial investment
-- `n_funds`: Number of funds to split capital into
-- `years`: Number of years to simulate
-- `sims`: Number of simulation runs
+**Additional Parameters:**
+- `target_return`: Target return percentage (4.14% Treasury rate or 10.56% NASDAQ average)
 
-**Key Metrics:**
-- Number of surviving funds after N years
-- Average capital per surviving fund
-- Total portfolio value (sum of all funds)
-- Survivorship rate vs. single fund baseline
-
-#### 3. Break Point Simulation
-
-A trader sets a target return threshold and stops trading once reached. This tests whether early stopping can preserve capital and improve risk-adjusted returns.
-
-**Parameters:**
-- `starting_capital`: Initial investment
-- `target_return`: Target return percentage (e.g., 0.12 for 12%)
-- `years`: Maximum years to trade (stops early if target reached)
-- `sims`: Number of simulation runs
+**Benchmark Comparisons:**
+- **Treasury Rate (4.14%)**: Tests beating risk-free returns
+- **NASDAQ Average (10.56%)**: Tests beating equity market returns
 
 **Key Metrics:**
-- Percentage of simulations that reach target return
-- Average time to reach target (if reached)
-- Final capital distribution (including those that stopped early)
-- Comparison to "never stop" strategy
+- Success rate (percentage reaching target)
+- Average time to reach target
+- Comparison to "never stop" baseline strategy
+- Risk-adjusted performance metrics
 
-#### Simulation Implementation Notes
+#### 3. Multi-Fund Simulation
 
-All simulations:
-- Use actual historical market data (probabilities and outcomes from our dataset)
-- Sample markets sequentially from a lognormal distribution skewed towards closer markets without replacement
-- Calculate returns based on actual market prices (probability = price)
-- Assume binary outcomes (win = 1.0, loss = 0.0)
+Capital is divided into multiple independent funds, each operating as separate single funds. Tests diversification benefits of splitting capital.
 
-Visualizations Generated:
-- Distribution histograms of final capital
-- Survival curves (percentage of funds/simulations still active over time)
-- Return distribution comparisons across strategies
-- Heatmaps showing success rates by number of funds and target returns
+**Parameters:**
+- `n_funds`: Number of independent funds (tested: 1, 3, 5, 10 funds)
+- `starting_capital`: Total capital divided equally among funds
+- Same market selection and probability parameters as Single Fund
+
+**Independence Features:**
+- Each fund uses different random seed
+- Funds can invest in same markets simultaneously (no coordination)
+- Each fund operates completely independently
+
+**Key Metrics:**
+- Portfolio-level survivorship rate vs single fund baseline
+- Average number of surviving funds per portfolio
+- Portfolio return volatility and risk reduction
+- Diversification benefit analysis
+
+#### Simulation Implementation
+
+**Technical Details:**
+- Uses actual Polymarket data filtered for 2025+ resolution dates
+- Vectorized operations for performance (1000 simulations in ~10-20 seconds)
+- Left-skewed exponential market selection using `skew_factor`
+- Binary outcomes: win = 1/probability return, loss = total loss
+- Tracks daily capital evolution and complete trade history
+
+**Quality Assurance:**
+- Reproducible results via random seeds
+- Performance timing and optimization
+- Comprehensive statistical analysis and visualization
+- Export capabilities for further research
 
 ## Limitations and Ackwnoledgments
 
